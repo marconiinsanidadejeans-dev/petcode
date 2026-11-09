@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PetCode - Resgate Seguro</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; color: #333; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 400px; text-align: center; }
+        h2 { color: #2c3e50; margin-bottom: 10px; }
+        p { color: #7f8c8d; font-size: 14px; margin-bottom: 25px; }
+        input, textarea { width: 100%; padding: 12px; margin: 8px 0 16px 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+        button { background-color: #27ae60; color: white; padding: 12px 20px; border: none; border-radius: 6px; cursor: pointer; width: 100%; font-size: 16px; font-weight: bold; transition: background 0.3s; }
+        button:hover { background-color: #219653; }
+        .hidden { display: none; }
+        .pet-photo { width: 120px; height: 120px; border-radius: 50%; object-fit: cover; margin-bottom: 15px; border: 3px solid #27ae60; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div id="loading">A carregar PetCode...</div>
+
+        <!-- TELA 1: CADASTRO INICIAL (PRIMEIRO USO) -->
+        <div id="register-screen" class="hidden">
+            <h2>Ativar Novo PetCode</h2>
+            <p>Esta fivela ainda não tem dono. Cadastre o seu amiguinho!</p>
+            <form id="form-register">
+                <input type="text" id="pet-name" placeholder="Nome do Pet (Ex: Thor)" required>
+                <input type="text" id="owner-name" placeholder="O seu Nome (Tutor)" required>
+                <input type="text" id="owner-phone" placeholder="O seu WhatsApp (Ex: 22 99999-9999)" required>
+                <textarea id="pet-notes" placeholder="Cuidados especiais, endereço ou observações"></textarea>
+                <button type="submit">Salvar e Ativar PetCode</button>
+            </form>
+        </div>
+
+        <!-- TELA 2: PERFIL DO PET ( QUANDO ALGUÉM ENCONTRA NA RUA ) -->
+        <div id="profile-screen" class="hidden">
+            <img id="display-photo" class="pet-photo" src="https://via.placeholder.com/120" alt="Foto do Pet">
+            <h2 id="display-name">Nome do Pet</h2>
+            <p id="display-status" style="color: #e74c3c; font-weight: bold;">Perdido / Encontrado na Rua</p>
+            
+            <div style="background: #eef2f3; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: left;">
+                <p style="margin: 0 0 10px 0; font-weight: bold; color: #2c3e50;">Enviar Recado Seguro ao Tutor:</p>
+                <textarea id="msg-finder" placeholder="Escreva onde encontrou o pet ou como ele está..."></textarea>
+                <button onclick="sendSecureMessage()">Enviar Alerta ao Tutor</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDK (Versão 9 Modular) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-app.js";
+        import { getDatabase, ref, get, set, update } from "https://www.gstatic.com/firebasejs/9.22.0/firebase-database.js";
+
+        // Configuração da Nuvem Firebase do Projeto
+        const firebaseConfig = {
+            databaseURL: "https://SEU-PROJETO-FIREBASE-DEFAULT-RTDB.firebaseio.com/"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+
+        // Pega o ID único da URL (ex: ?id=abc123xyz)
+        const urlParams = new URLSearchParams(window.location.search);
+        let tagId = urlParams.get('id');
+
+        // Se abrir sem ID de teste, gera um ID simulado para testes rápidos
+        if (!tagId) {
+            tagId = "tag_teste_thor_001";
+        }
+
+        async function initApp() {
+            const tagRef = ref(db, 'pets/' + tagId);
+            const snapshot = await get(tagRef);
+
+            document.getElementById('loading').style.display = 'none';
+
+            if (snapshot.exists()) {
+                // A fivela JÁ EXISTE e tem pet cadastrado -> Mostra a tela de perfil/resgate
+                const data = snapshot.val();
+                document.getElementById('display-name').innerText = data.petName;
+                if(data.photoUrl) {
+                    document.getElementById('display-photo').src = data.photoUrl;
+                }
+                document.getElementById('profile-screen').classList.remove('hidden');
+            } else {
+                // A fivela É NOVA (Primeiro Uso) -> Mostra a tela de cadastro
+                document.getElementById('register-screen').classList.remove('hidden');
+            }
+        }
+
+        // Salvar novo cadastro no primeiro uso
+        document.getElementById('form-register').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const petName = document.getElementById('pet-name').value;
+            const ownerName = document.getElementById('owner-name').value;
+            const ownerPhone = document.getElementById('owner-phone').value;
+            const petNotes = document.getElementById('pet-notes').value;
+
+            try {
+                await set(ref(db, 'pets/' + tagId), {
+                    petName,
+                    ownerName,
+                    ownerPhone,
+                    petNotes,
+                    createdAt: Date.now()
+                });
+                alert('PetCode ativado com sucesso para o ' + petName + '!');
+                location.reload();
+            } catch (error) {
+                alert('Erro ao salvar: ' + error.message);
+            }
+        });
+
+        // Enviar mensagem segura sem expor o número do tutor diretamente
+        window.sendSecureMessage = async function() {
+            const mensagem = document.getElementById('msg-finder').value;
+            if(!mensagem) {
+                alert('Por favor, escreva uma mensagem antes de enviar.');
+                return;
+            }
+            
+            const tagRef = ref(db, 'pets/' + tagId);
+            const snapshot = await get(tagRef);
+            if(snapshot.exists()) {
+                const data = snapshot.val();
+                // Abre o WhatsApp para o tutor de forma segura ou dispara o alerta
+                const urlWa = `https://wa.me/55${data.ownerPhone.replace(/\D/g,'')}?text=Olá%20${encodeURIComponent(data.ownerName)},%20encontrei%20o%20${encodeURIComponent(data.petName)}!%20Mensagem:%20${encodeURIComponent(mensagem)}`;
+                window.location.href = urlWa;
+            }
+        }
+
+        initApp();
+    </script>
+</body>
+</html>
