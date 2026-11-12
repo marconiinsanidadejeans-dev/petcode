@@ -46,45 +46,43 @@
         const container = document.querySelector('.container');
 
         async function initApp() {
-            if (!tagId) {
-                container.innerHTML = `
-                    <h2>Ativar Novo PetCode</h2>
-                    <p>Esta fivela ainda não está associada a nenhum pet. Preencha os dados abaixo para registar:</p>
-                    <input type="text" id="petName" placeholder="Nome do Pet">
-                    <input type="text" id="ownerName" placeholder="Nome do Tutor">
-                    <input type="text" id="ownerPhone" placeholder="Telefone / WhatsApp (com DDD)">
-                    <textarea id="petNotes" placeholder="Observações (ex: Alérgico a ração X, toma remédio)"></textarea>
-                    <button onclick="activateTag()">Ativar Fivela</button>
-                `;
-                return;
+            // Se tem ID na URL, verificamos se já está cadastrado no Firebase
+            if (tagId) {
+                try {
+                    const dbRef = ref(db);
+                    const snapshot = await get(child(dbRef, `pets/${tagId}`));
+                    
+                    if (snapshot.exists()) {
+                        const pet = snapshot.val();
+                        container.innerHTML = `
+                            <h2>${pet.petName}</h2>
+                            <p>Olá! Encontrou o meu pet? Por favor, entre em contato com o meu tutor.</p>
+                            <p style="text-align: left; background: #f9f9f9; padding: 12px; border-radius: 6px;">
+                                <strong>Tutor:</strong> ${pet.ownerName}<br>
+                                <strong>Telefone:</strong> ${pet.ownerPhone}<br>
+                                <strong>Observações:</strong> ${pet.petNotes || 'Nenhuma'}
+                            </p>
+                            <button onclick="sendSecureMessage()">Enviar Mensagem ao Tutor</button>
+                            <input type="text" id="msg-finder" placeholder="Escreva sua mensagem aqui..." style="margin-top: 15px;">
+                        `;
+                        return;
+                    }
+                } catch (error) {
+                    console.error("Erro ao buscar pet:", error);
+                }
             }
 
-            try {
-                const dbRef = ref(db);
-                const snapshot = await get(child(dbRef, `pets/${tagId}`));
-                
-                if (snapshot.exists()) {
-                    const pet = snapshot.val();
-                    container.innerHTML = `
-                        <h2>${pet.petName}</h2>
-                        <p>Olá! Encontrou o meu pet? Por favor, entre em contato com o meu tutor.</p>
-                        <p style="text-align: left; background: #f9f9f9; padding: 12px; border-radius: 6px;">
-                            <strong>Tutor:</strong> ${pet.ownerName}<br>
-                            <strong>Observações:</strong> ${pet.petNotes || 'Nenhuma'}
-                        </p>
-                        <button onclick="sendSecureMessage()">Enviar Mensagem ao Tutor</button>
-                        <input type="text" id="msg-finder" placeholder="Escreva sua mensagem aqui..." style="margin-top: 15px;">
-                    `;
-                } else {
-                    container.innerHTML = `
-                        <h2>Fivela Não Ativada</h2>
-                        <p>Esta fivela (ID: ${tagId}) ainda não foi configurada. Deseja ativá-la agora?</p>
-                        <button onclick="window.location.href='?id=${tagId}'">Ativar Agora</button>
-                    `;
-                }
-            } catch (error) {
-                container.innerHTML = `<h2>Erro</h2><p>Não foi possível carregar os dados.</p>`;
-            }
+            // Se NÃO tem ID ou se a fivela NÃO está cadastrada, exibimos o formulário de ativação
+            const idTexto = tagId ? ` (ID: ${tagId})` : '';
+            container.innerHTML = `
+                <h2>Ativar Novo PetCode${idTexto}</h2>
+                <p>Preencha os dados abaixo para registar esta fivela:</p>
+                <input type="text" id="petName" placeholder="Nome do Pet (Ex: Thor)">
+                <input type="text" id="ownerName" placeholder="Nome do Tutor">
+                <input type="text" id="ownerPhone" placeholder="Telefone / WhatsApp (com DDD)">
+                <textarea id="petNotes" placeholder="Observações (ex: Alérgico a ração X, toma remédio)"></textarea>
+                <button onclick="activateTag()">Ativar Fivela</button>
+            `;
         }
 
         window.activateTag = async function() {
@@ -98,8 +96,11 @@
                 return;
             }
 
+            // Se o usuário abriu com um ID (ex: 001), usamos ele. Se abriu sem ID, geramos um ID automático baseado no timestamp
+            const finalId = tagId || 'pet_' + Date.now();
+
             try {
-                await set(ref(db, `pets/` + tagId), {
+                await set(ref(db, `pets/` + finalId), {
                     petName,
                     ownerName,
                     ownerPhone,
@@ -107,7 +108,8 @@
                     createdAt: Date.now()
                 });
                 alert('PetCode ativado com sucesso para o ' + petName + '!');
-                location.reload();
+                // Redireciona para a página já testando o QR code oficial com o ID salvo
+                window.location.href = `?id=${finalId}`;
             } catch (error) {
                 alert('Erro ao salvar: ' + error.message);
             }
